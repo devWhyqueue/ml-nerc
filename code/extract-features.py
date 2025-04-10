@@ -7,6 +7,9 @@ from os import listdir
 from xml.dom.minidom import parse
 from nltk.tokenize import word_tokenize
 
+import random
+random.seed(42)  # Any fixed number will do
+
 # Lexicon loading
 with open("../data/lexicon/DrugBank.txt", encoding="utf-8") as f:
     lines = [line.strip() for line in f if line.strip()]
@@ -42,8 +45,8 @@ chemical_patterns = [
 
 # Create a more efficient substring lookup structure
 # Store a sample of shorter drugs for partial matching
-short_drugs_db = [drug for drug in drugbank_lexicon if 4 < len(drug) < 10][:500]
-short_drugs_hsdb = [drug for drug in hsdb_lexicon if 4 < len(drug) < 10][:200]
+short_drugs_db = sorted([drug for drug in drugbank_lexicon if 4 < len(drug) < 10])[:500]
+short_drugs_hsdb = sorted([drug for drug in hsdb_lexicon if 4 < len(drug) < 10])[:200]
 
    
 ## --------- tokenize sentence ----------- 
