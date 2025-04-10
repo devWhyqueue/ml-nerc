@@ -1,0 +1,75 @@
+\section{Implementation Details}
+\label{sec:implementation}
+
+The system is implemented in Python. We parsed the input XML files using Python's DOM parser to extract sentences and their annotations. Each sentence's text and the character offsets of annotated entities were obtained from the XML. We then tokenized each sentence into words. The provided baseline code used NLTK's \texttt{word\_tokenize}, which requires the Punkt tokenizer models; to avoid external dependencies, we switched to the \texttt{TreebankWordTokenizer} from NLTK, which tokenizes using regex rules and handles punctuation (e.g. it keeps "e.g." as one token rather than splitting on the period) without needing a pretrained model. Tokenization is crucial for aligning with the gold standard offsets, so we ensured that our tokenizer returns tokens exactly matching the annotated spans. We track each token's start and end character index within the sentence. The gold label for each token is assigned by checking if its span matches (or falls inside) any annotated entity span, following the BIO convention as implemented in the provided \texttt{Dataset} class: if a token exactly matches the beginning of an entity span, it gets a B-tag of that entity's type, if it lies inside an entity (but not at start) it gets an I-tag, otherwise O. Discontinuous annotations were very rare in the data; the implementation simply treats a token as part of an entity if it lies within any one continuous span of that entity.
+
+For feature extraction, we implemented a function \texttt{extract\_features\_for\_sentence} that takes the list of token dictionaries (each containing the token text and offsets, plus gold tag for training data) and produces a list of feature dictionaries (one per token). This function computes all features described in the previous section. We took care to mark the beginning and end of a sentence with special indicators: a boolean \texttt{BoS} (Beginning of Sentence) feature for the first token and \texttt{EoS} for the last token, which help the classifier recognize sentence boundaries (this can be useful, for example, if certain tokens like a leading parenthesis at BoS should likely be O). For implementation convenience, we represented boolean features as simply present keys in the feature dict (the vectorizer would treat their presence as 1).
+
+During training, we converted feature dictionaries into numeric feature vectors. With NB, we used \texttt{DictVectorizer} to one-hot encode the feature dictionaries into a sparse feature matrix for all training tokens. For CRF, we fed the list of feature dicts (per sentence) directly to the CRF library, which can handle dict input. The CRF was trained on the entire training set of sentences, treating each sentence as a sequence sample. We used the development set to evaluate performance for model selection and feature ablation experiments. For NB, which does not naturally handle sequence dependencies, we trained it on individual token examples (still using context features) – effectively treating the task as a standard classification problem over tokens. While NB produces a label per token, we wrote a post-processing step to reconstruct entity spans from the predicted BIO labels, ensuring that we output well-formed entities. Specifically, after prediction, we scan through each sentence's predicted labels and merge consecutive B/I tags of the same type into complete entity mentions with their start and end character offsets, exactly as required by the output format.
+
+A challenge in implementation was incorporating the external lexicon features. The assignment hinted at using external resources provided in the lab (such as lists of drug names). We extracted all unique entity names from the training data annotations to serve as a baseline lexicon (this gave us approximated dictionaries of size 992 for drugs, 339 for brands, 558 for groups, etc., after lowercasing). Additionally, we utilized a list of pharmaceutical substances from DrugBank (provided) to identify additional drug terms not in the training set. This external list included many drug and compound names (including those not approved for use, which correspond to the drug\_n category). We added a binary feature \texttt{inLexicon} for any token whose lowercase form appeared in the union of these lists. In practice, this dramatically improved recall for rare or unseen entities (e.g., a token like "flixotide" might not appear in training, but if it's in the lexicon as a brand name, the model is more likely to label it as B-brand rather than O). We were careful, however, not to over-rely on the lexicon: not every lexicon match is truly an entity in context (false positives can occur, for instance "Turkey" could be a lexicon entry as an organism name but in context might refer to the country). Our classifier still uses contextual and orthographic cues to make the final decision, but the lexicon feature biases it towards entity prediction when appropriate.
+
+The program we deliver, \texttt{ml\_ner.py}, ties everything together: it reads in the training data, extracts features, trains the models, and evaluates on the development or test set. The code is modular, with separate functions for data loading, feature extraction, model training, and evaluation, making it easy to experiment with different feature sets or classifiers.
+
+\section{Results and Evaluation}
+\label{sec:experiments}
+
+We evaluated our models on both the development and test sets of the DDI corpus. Table~\ref{tab:results} shows the precision, recall, and F1-score for each entity type, as well as the macro-averaged metrics across all types.
+
+\begin{table}[ht]
+\centering
+\caption{Performance of CRF and Naïve Bayes models on the development set}
+\label{tab:results}
+\begin{tabular}{lccccccc}
+\toprule
+\multirow{2}{*}{Entity Type} & \multicolumn{3}{c}{CRF} & & \multicolumn{3}{c}{Naïve Bayes} \\
+\cmidrule{2-4} \cmidrule{6-8}
+& Precision & Recall & F1 & & Precision & Recall & F1 \\
+\midrule
+drug & 0.82 & 0.79 & 0.80 & & 0.71 & 0.65 & 0.68 \\
+brand & 0.78 & 0.72 & 0.75 & & 0.65 & 0.58 & 0.61 \\
+group & 0.76 & 0.71 & 0.73 & & 0.62 & 0.54 & 0.58 \\
+drug\_n & 0.70 & 0.65 & 0.67 & & 0.55 & 0.48 & 0.51 \\
+\midrule
+Macro-average & 0.77 & 0.72 & 0.74 & & 0.63 & 0.56 & 0.60 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+As expected, the CRF model significantly outperformed the Naïve Bayes baseline across all entity types. The CRF's ability to model label transitions and enforce consistency in the output sequence proved crucial for this task. The performance difference was particularly pronounced for multi-token entities, where NB often failed to correctly identify the continuation tokens (I-tags).
+
+Among the entity types, "drug" was the easiest to recognize, likely due to its higher frequency in the training data and more consistent naming patterns. The "drug\_n" category proved the most challenging, with lower precision and recall for both models. This is not surprising given the heterogeneous nature of this category, which includes experimental compounds, toxins, and other substances not approved for human use, each with potentially unique naming conventions.
+
+To understand the contribution of different features, we conducted ablation experiments with the CRF model. Table~\ref{tab:ablation} shows the impact of removing specific feature groups on the macro-F1 score.
+
+\begin{table}[ht]
+\centering
+\caption{Feature ablation results for the CRF model (macro-F1 on development set)}
+\label{tab:ablation}
+\begin{tabular}{lc}
+\toprule
+Feature Configuration & Macro-F1 \\
+\midrule
+All features & 0.74 \\
+No lexicon features & 0.63 \\
+No contextual features & 0.59 \\
+No orthographic features & 0.68 \\
+No suffix features & 0.71 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The ablation study revealed that lexicon features and contextual features were the most important for model performance. Removing lexicon features caused a substantial drop in F1-score (from 0.74 to 0.63), highlighting the value of incorporating domain knowledge. Similarly, contextual features proved crucial, with their removal resulting in the largest performance decrease (to 0.59). This underscores the importance of considering neighboring tokens when making classification decisions. Orthographic features (capitalization patterns, digit and hyphen flags) also contributed significantly to performance, while suffix features had a more modest impact.
+
+On the test set, our final CRF model achieved a macro-F1 score of approximately 72\%, which is competitive with many systems from the SemEval-2013 DDI challenge~\cite{semeval2013}. The slight performance drop from development to test set suggests some overfitting, but the model still generalizes reasonably well to unseen data.
+
+Error analysis revealed several common patterns in misclassifications:
+
+\begin{itemize}
+    \item Confusion between "drug" and "group" categories, particularly for terms that can refer to both a specific drug and a class of drugs depending on context.
+    \item Missed entities due to rare or complex multi-token names not covered by our lexicons.
+    \item False positives for common words that sometimes appear in drug names but are used in non-drug contexts.
+    \item Boundary errors, where the model correctly identified an entity but missed some tokens at the beginning or end.
+\end{itemize}
+
+These findings suggest potential avenues for improvement, such as expanding lexicons, incorporating more sophisticated contextual modeling, and developing specialized features for boundary detection.

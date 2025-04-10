@@ -1,0 +1,16 @@
+\section{Dataset}
+\label{sec:dataset}
+
+The DDI corpus~\cite{ddi-corpus} serves as the benchmark dataset for our drug name recognition task. It consists of 1,025 documents, with 792 from DrugBank drug descriptions and 233 from MedLine abstracts. The corpus has been manually annotated with drug mentions and their corresponding types, making it suitable for training and evaluating NERC systems.
+
+Each drug mention in the corpus is categorized into one of four entity types:
+\begin{itemize}
+    \item \textbf{drug}: Generic drug names (e.g., "aspirin", "ibuprofen")
+    \item \textbf{brand}: Brand or trade names of medications (e.g., "Tylenol", "Advil")
+    \item \textbf{group}: Pharmacological classes or categories of drugs (e.g., "antibiotics", "fluoroquinolones")
+    \item \textbf{drug\_n}: Active substances not approved for human use, such as toxins or experimental compounds
+\end{itemize}
+
+The corpus is provided in XML format, with each document containing sentences and their annotations. For our experiments, we followed the standard split of the corpus into training, development, and test sets as used in the SemEval-2013 DDI challenge~\cite{semeval2013}. This allows for direct comparison with other systems evaluated on the same benchmark.
+
+The task involves locating all drug-related entities in the text and correctly labeling them with their type. We approach this as a sequence labeling problem using the BIO (Begin, Inside, Outside) encoding scheme to mark entity boundaries. Each token in a sentence is assigned a label B-type if it begins an entity of a given type, I-type if it continues an entity, or O if it is not part of any entity.

@@ -1,0 +1,40 @@
+\section{Method}
+\label{sec:methodology}
+
+Our approach treats drug name recognition as a supervised sequence labeling problem. We developed a feature extraction mechanism to convert each token in a sentence into a rich vector of features that capture its orthographic form, context, and other informative attributes. These feature vectors are used to train a statistical classifier that assigns BIO-tagged labels to each token.
+
+\subsection{Feature Representation}
+Each token is characterized by a set of lexical and orthographic features commonly used in NER. For a token with surface form $w$ (and lowercase form $w_{lower}$), we extract features as follows:
+
+\begin{itemize}
+    \item \textbf{Word Form:} The exact text of the token ($w$) and its lowercase variant ($w_{lower}$). This helps the model memorize specific drug names (e.g., "aspirin") as well as case-insensitive matches.
+    
+    \item \textbf{Suffixes:} Character n-grams at the end of the word, specifically the last 3 letters and last 4 letters. Many drug names share common suffixes (e.g., "-azole", "-vir", "-ine") that indicate chemical families or drug classes, so including short suffixes is beneficial. For example, a token "propranolol" yields suffix3 = "lol" and suffix4 = "olol".
+    
+    \item \textbf{Capitalization Pattern:} A feature encoding the pattern of letter cases in the token. We define categories such as \textit{ALL-CAPS} (all letters uppercase, e.g. an acronym "DNA"), \textit{Title} (first letter uppercase, rest lowercase, e.g. "Aspirin"), \textit{LOWER} (all letters lowercase), \textit{MIXED} (mixed case, e.g. "iPhone"), or \textit{NONE} (token has no alphabetic characters). This helps differentiate, for instance, brand names which often start with a capital letter, from generic drug names which are usually all lowercase.
+    
+    \item \textbf{Digit and Symbol Flags:} Boolean features indicating if the token contains any numeric digit, and if it contains a hyphen (-). Many drug names include numbers (e.g., "Benzathine penicillin G 2.4MU") or hyphens (e.g., "AZT-3TC"), and these characteristics can distinguish certain classes of mentions. We found numeric tokens were often not drug names (except dosages, which should be O), whereas hyphenated terms could be multi-word brands or combinations.
+    
+    \item \textbf{Contextual Features:} To capture the context of each token, we include features of the previous token and next token (when they exist). For each neighboring token, we include its word form, lowercase form, suffixes, capitalization pattern, and digit/hyphen flags. This gives the classifier a window of size 3 (previous, current, next) to determine the label of the current token. Context is crucial; for example, a word like "acid" might be part of a drug name if preceded by another word (as in "acetylsalicylic acid"), versus standing alone.
+    
+    \item \textbf{Lexicon Features:} We incorporate external knowledge by checking each token against precompiled lists of known drug names. Specifically, we created a lexicon of drug terms from training data (and additional resources provided) that includes known generic names, brand names, and group names. For each token, we add a feature \texttt{inDrugLexicon} indicating if the lowercase token appears in any drug name list (of any type). We also experimented with type-specific lexicon flags (e.g., \texttt{inBrandList}, \texttt{inGroupList}), which yielded slightly better precision for those categories by cueing the classifier to the likely type of an identified term. For instance, "aspirin" and "ibuprofen" appear in the drug lexicon, "Tylenol" in the brand lexicon, "antibiotics" in the group lexicon. Tokens found in these lists are strong candidates to be labeled as entities rather than O.
+\end{itemize}
+
+It is worth noting that we do not use any deep contextual embeddings or part-of-speech tags in this implementation, as the focus is on classic feature engineering. The above features (word identity, affixes, casing, digits, context window, lexicon membership) constituted a total of about 10 feature templates, which is in line with what is recommended for this task.
+
+\subsection{Sequence Classification Models}
+We implemented two learning algorithms to map sequences of token features to sequences of BIO labels:
+
+\subsubsection{Conditional Random Field (CRF)}
+Our primary model is a linear-chain CRF, which globally optimizes the label sequence probability given the input sequence~\cite{crf-tutorial}. In a CRF, the probability of a label sequence $Y = (y_1, y_2, \ldots, y_n)$ for input tokens $X = (x_1,\ldots,x_n)$ is defined as:
+
+\begin{equation}
+P(Y|X) = \frac{1}{Z(X)} \exp\Big(\sum_{t=1}^n \big[ \mathbf{w} \cdot \Phi(x_t, y_t) + \mathbf{v} \cdot \Psi(y_{t-1}, y_t) \big]\Big),
+\end{equation}
+
+where $\Phi(x_t, y_t)$ are feature functions at position $t$ (depending on the token features and current label), and $\Psi(y_{t-1}, y_t)$ are transition features capturing dependencies between neighboring labels. $\mathbf{w}$ and $\mathbf{v}$ are weight vectors learned from training data, and $Z(X)$ is a normalization factor. In simpler terms, the CRF can learn, for example, a weight that encourages label \textit{I-drug} to follow \textit{B-drug}, and discourage \textit{I-drug} from following an O or a different type, while also using the token-based features to decide if a token should start or continue an entity. We utilized the \textit{sklearn-crfsuite} implementation of CRF (which uses L-BFGS for optimization and L1/L2 regularization). We set the algorithm to L2-regularized maximum likelihood estimation, with default hyperparameters; we did not perform extensive hyperparameter tuning due to computational limits, but we ensured the model had sufficient iterations to converge.
+
+\subsubsection{Naïve Bayes (NB)}
+As a baseline, we also implemented a multinomial Naïve Bayes classifier that labels each token independently. NB assumes the features of a token are conditionally independent given the label, and learns per-label likelihoods for each feature. During prediction, it chooses for each token $t$ the label $\hat{y}_t = \arg\max_y P(y) \prod_{f \in \text{features}} P(f | y)$, essentially picking the label that best explains the token's features. We used the implementation from scikit-learn~\cite{scikit-learn} (which by default applies additive smoothing). In our case, since each token's features include some context (like forms of neighboring words), NB is not strictly independent of context, but it does not enforce sequential consistency—each token is labeled in isolation. We expected NB to have lower performance, especially in recall, since it might fail to capture entities spanning multiple tokens (often labeling only the first token as B-entity and missing the continuation with I). However, NB is fast to train and provided a useful baseline to gauge feature effectiveness.
+
+We did not consider neural network models (such as LSTM-based taggers) as the task instructions explicitly prohibited the use of neural learners for this assignment (those will be explored later in the course). Focusing on CRF (a strong classical sequence model) and NB (a simple baseline) allows us to analyze the contribution of feature engineering in a controlled way.
