@@ -1,0 +1,6 @@
+.venv
+output
+*.crf
+*.joblib
+*.feat
+*.pyc

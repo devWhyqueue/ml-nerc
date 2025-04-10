@@ -1,70 +1,59 @@
-#! /usr/bin/python3
+#!/usr/bin/env python3
 
 import sys
-from os import system
+from ML_model import *
 
-from tensorflow.keras.models import Model,load_model
+def instances(fi):
+    xseq = []
+    toks = []
+    
+    for line in fi:
+        line = line.strip('\n')
+        if not line:
+            # An empty line means the end of a sentence.
+            # Return accumulated sequences, and reinitialize.
+            yield xseq, toks
+            xseq = []
+            toks = []
+            continue
 
-from dataset import *
-from codemaps import *
-import evaluator
+        # Split the line with TAB characters.
+        fields = line.split('\t')
+        # Append the item features to the item sequence.
+        # fields are:  0=sid, 1=form, 2=span_start, 3=span_end, 4=tag, 5...N = features
+        item = fields[5:]        
+        xseq.append(item)
 
-## --------- Entity extractor ----------- 
-## -- Extract drug entities from given text and return them as
-## -- a list of dictionaries with keys "offset", "text", and "type"
+        # Append token information (needed to produce the appropriate output)
+        toks.append([fields[0],fields[1],fields[2],fields[3]])
 
-def output_entities(data, preds, outfile) :
 
-   outf = open(outfile, 'w')
-   for sid,tags in zip(data.sentence_ids(),preds) : 
-      inside = False
-      for k in range(0,min(len(data.get_sentence(sid)),codes.maxlen)) :
-         y = tags[k]
-         token = data.get_sentence(sid)[k]
+if __name__ == '__main__':
+
+    # load leaned model
+    model = ML_model(sys.argv[1])
+
+    # Read training instances from STDIN, and send them to trainer.
+    for xseq,toks in instances(sys.stdin):
+        predictions = model.predict(xseq)
+
+        inside = False;
+        for k in range(0,len(predictions)) :
+            y = predictions[k]
+            (sid, form, offS, offE) = toks[k]
             
-         if (y[0]=="B") :
-             entity_form = token['form']
-             entity_start = token['start']
-             entity_end = token['end']
-             entity_type = y[2:]
-             inside = True
-         elif (y[0]=="I" and inside) :
-             entity_form += " "+token['form']
-             entity_end = token['end']
-         elif (y[0]=="O" and inside) :
-             print(sid, str(entity_start)+"-"+str(entity_end), entity_form, entity_type, sep="|", file=outf)
-             inside = False
+            if (y[0]=="B") :
+                entity_form = form
+                entity_start = offS
+                entity_end = offE
+                entity_type = y[2:]
+                inside = True
+            elif (y[0]=="I" and inside) :
+                entity_form += " "+form
+                entity_end = offE
+            elif (y[0]=="O" and inside) :
+                print(sid, entity_start+"-"+entity_end, entity_form, entity_type, sep="|")
+                inside = False
         
-      if inside : print(sid, str(entity_start)+"-"+str(entity_end), entity_form, entity_type, sep="|", file=outf)
-            
-   outf.close()
-
-## --------- Evaluator ----------- 
-def evaluation(datadir,outfile) :
-   evaluator.evaluate("NER", datadir, outfile)
-
-   
-## --------- MAIN PROGRAM ----------- 
-## --
-## -- Usage:  baseline-NER.py target-dir
-## --
-## -- Extracts Drug NE from all XML files in target-dir
-## --
-
-fname = sys.argv[1]
-datadir = sys.argv[2]
-outfile = sys.argv[3]
-
-model = load_model(fname)
-codes = Codemaps(fname)
-
-testdata = Dataset(datadir)
-X = codes.encode_words(testdata)
-
-Y = model.predict(X)
-Y = [[codes.idx2label(np.argmax(w)) for w in s] for s in Y] 
-
-# extract & evaluate entities with basic model
-output_entities(testdata, Y, outfile)
-evaluation(datadir,outfile)
+        if inside : print(sid, entity_start+"-"+entity_end, entity_form, entity_type, sep="|")
 

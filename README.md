@@ -40,6 +40,31 @@ The NERC system implements several key features:
 - Detailed analysis of feature impact through ablation studies
 - Error analysis and insights for future improvements
 
+## Setup and Installation
+
+To set up a virtual environment and install the required dependencies:
+
+1. Make sure you have Python installed (Python 3.8+ recommended)
+2. Create a virtual environment:
+   ```
+   python -m venv venv
+   ```
+3. Activate the virtual environment:
+   - On Windows:
+     ```
+     venv\Scripts\activate
+     ```
+   - On macOS/Linux:
+     ```
+     source venv/bin/activate
+     ```
+4. Install the dependencies from requirements.txt:
+   ```
+   pip install -r requirements.txt
+   ```
+
+Once the dependencies are installed, you can run the code as described in the code directory.
+
 ## Results
 
 Our CRF-based model achieves a macro-F1 score of approximately 72% on the test set, approaching the performance of the best systems in the SemEval-2013 DDI challenge. The ablation studies reveal that lexicon features and contextual information are particularly valuable for drug name recognition.

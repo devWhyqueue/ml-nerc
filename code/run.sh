@@ -1,12 +1,43 @@
 #! /bin/bash
 
-BASEDIR=../../..
-export PYTHONPATH=$BASEDIR/util
+BASEDIR=..
+OUTPUT_DIR="$BASEDIR/output"
 
-# train NN
-echo "Training NN"
-python3 train.py $BASEDIR/data/train $BASEDIR/data/devel mymodel
+# Create output directory if it doesn't exist
+mkdir -p "$OUTPUT_DIR"
 
-# run model on devel data and compute performance
-echo "Predicting and evaluatig"
-python3 predict.py mymodel $BASEDIR/data/devel devel.out | tee devel.stats
+# Install tokenizer
+python -m nltk.downloader punkt_tab
+
+# convert datasets to feature vectors
+echo "Extracting features..."
+python extract-features.py $BASEDIR/data/train/ > "$OUTPUT_DIR/train.feat"
+python extract-features.py $BASEDIR/data/devel/ > "$OUTPUT_DIR/devel.feat"
+
+# train CRF model
+echo "Training CRF model..."
+python train-crf.py "$OUTPUT_DIR/model.crf" < "$OUTPUT_DIR/train.feat"
+# run CRF model
+echo "Running CRF model..."
+python predict.py "$OUTPUT_DIR/model.crf" < "$OUTPUT_DIR/devel.feat" > "$OUTPUT_DIR/devel-CRF.out"
+# evaluate CRF results
+echo "Evaluating CRF results..."
+python evaluator.py NER $BASEDIR/data/devel "$OUTPUT_DIR/devel-CRF.out" > "$OUTPUT_DIR/devel-CRF.stats"
+
+
+#Extract Classification Features
+cat "$OUTPUT_DIR/train.feat" | cut -f5- | grep -v ^$ > "$OUTPUT_DIR/train.clf.feat"
+
+
+# train Naive Bayes model
+echo "Training Naive Bayes model..."
+python train-sklearn.py "$OUTPUT_DIR/model.joblib" "$OUTPUT_DIR/vectorizer.joblib" < "$OUTPUT_DIR/train.clf.feat"
+# run Naive Bayes model
+echo "Running Naive Bayes model..."
+python predict-sklearn.py "$OUTPUT_DIR/model.joblib" "$OUTPUT_DIR/vectorizer.joblib" < "$OUTPUT_DIR/devel.feat" > "$OUTPUT_DIR/devel-NB.out"
+# evaluate Naive Bayes results 
+echo "Evaluating Naive Bayes results..."
+python evaluator.py NER $BASEDIR/data/devel "$OUTPUT_DIR/devel-NB.out" > "$OUTPUT_DIR/devel-NB.stats"
+
+# remove auxiliary files.
+rm "$OUTPUT_DIR/train.clf.feat"
