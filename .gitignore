@@ -1,6 +1,7 @@
 .venv
-output
+.output
 *.crf
 *.joblib
 *.feat
 *.pyc
+.idea

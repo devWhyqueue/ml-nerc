@@ -1,18 +1,18 @@
 #! /bin/bash
 
 BASEDIR=..
-OUTPUT_DIR="$BASEDIR/output"
+OUTPUT_DIR="$BASEDIR/.output"
 
 # Create output directory if it doesn't exist
 mkdir -p "$OUTPUT_DIR"
 
 # Install tokenizer
-python -m nltk.downloader punkt_tab
+python -m nltk.downloader punkt_tab averaged_perceptron_tagger_eng
 
 # convert datasets to feature vectors
 echo "Extracting features..."
-python extract-features.py $BASEDIR/data/train/ > "$OUTPUT_DIR/train.feat"
-python extract-features.py $BASEDIR/data/devel/ > "$OUTPUT_DIR/devel.feat"
+python features/main.py $BASEDIR/data/train/ > "$OUTPUT_DIR/train.feat"
+python features/main.py $BASEDIR/data/devel/ > "$OUTPUT_DIR/devel.feat"
 
 # train CRF model
 echo "Training CRF model..."
