@@ -38,11 +38,12 @@ def process_file(filepath, outfile):
         # Extract entity spans
         entities = s.getElementsByTagName("entity")
         for e in entities:
-            # For discontinuous entities, we only get the first span
-            # (will not work, but there are few of them)
-            (start, end) = e.attributes["charOffset"].value.split(";")[0].split("-")
+            char_offsets = e.attributes["charOffset"].value.split(";")
             typ = e.attributes["type"].value
-            spans.append((int(start), int(end), typ))
+
+            for offset in char_offsets:
+                start, end = offset.split("-")
+                spans.append((int(start), int(end), typ))
 
         # Convert the sentence to a list of tokens
         tokens = tokenize(stext)

@@ -1,32 +1,13 @@
 #!/usr/bin/python3
+"""Enhanced feature extraction for a CRF-based NER system.
+Adds: POS tagging (NLTK), word shape features, expanded partial match logic, improved lexicon usage.
 """
-Enhanced feature extraction for a CRF-based NER system.
-
-This script adds:
-1. POS tagging features via NLTK.
-2. Word shape features (e.g., "Xx" for capital-lower).
-3. Expanded partial match logic that considers morphological variants.
-4. Improved lexicon usage (e.g., normalizing tokens before lookup).
-"""
-
+import nltk
 import sys
 
-import nltk
-
-
-# Make sure you have downloaded the NLTK 'averaged_perceptron_tagger' model:
-#   import nltk
-#   nltk.download('averaged_perceptron_tagger')
-
-# You can import or copy over the existing code (casing, char_ngrams, etc.) here from your original version.
-# Below, we keep or reuse many original methods and add new improvements.
-
-##################################################
-# Original helper functions (with some enhancements)
-##################################################
 
 def casing(token):
-    """Determine the casing pattern of a token."""
+    """Determine token casing pattern."""
     if token.isupper():
         return "ALLCAPS"
     elif token.istitle():
@@ -40,289 +21,164 @@ def casing(token):
 
 
 def char_ngrams(token, n):
-    """Extract limited character n-grams."""
+    """Extract limited character n-grams (max 5)."""
     if len(token) < n:
         return [token.lower()]
-    # Keep up to 5 n-grams for performance
-    ngrams = []
-    for i in range(min(5, len(token) - n + 1)):
-        ngrams.append(token[i: i + n].lower())
-    return ngrams
+    return [token[i:i + n].lower() for i in range(min(5, len(token) - n + 1))]
 
 
 def has_chemical_pattern(token, chemical_patterns):
-    """Check if token matches any known chemical pattern regex."""
+    """Return True if token matches any chemical regex pattern."""
     return any(pattern.search(token) for pattern in chemical_patterns)
 
 
 def has_drug_affix(token, common_drug_prefixes, common_drug_suffixes):
-    """Check if token has drug-like prefix or suffix."""
-    t_lower = token.lower()
-    if len(t_lower) < 3:
-        return False
-    return (t_lower[:3] in common_drug_prefixes or t_lower[-3:] in common_drug_suffixes)
+    """Return True if token has drug-like prefix or suffix."""
+    t = token.lower()
+    if len(t) < 3: return False
+    return (t[:3] in common_drug_prefixes or t[-3:] in common_drug_suffixes)
 
 
 def word_shape(token):
-    """
-    Return a simplified 'shape' of the token to capture 
-    letter/digit/uppercase/length patterns, e.g.:
-       - "Acetaminophen" -> "Xxxxxxxxxxxxx"
-       - "FDA"           -> "XXX"
-       - "CYP2D6"        -> "XXXdX"
-    """
-    shape_str = []
+    """Return a simplified shape of the token (e.g., 'Acetaminophen' -> 'Xxxxxxxxxxxxx')."""
+    shape = []
     for char in token:
         if char.isdigit():
-            shape_str.append("d")
+            shape.append("d")
         elif char.isalpha():
-            if char.isupper():
-                shape_str.append("X")
-            else:
-                shape_str.append("x")
+            shape.append("X" if char.isupper() else "x")
         else:
-            shape_str.append(char)
-    # Optionally collapse repeating shape symbols (less granular):
-    # e.g. "Xxxxx" -> "Xx+"
-    # For now, we’ll keep the full shape.
-    return "".join(shape_str)
+            shape.append(char)
+    return "".join(shape)
 
-
-##################################################
-# New partial matching improvements
-##################################################
 
 def partial_match_morphological(token, short_drugs, cache):
-    """
-    Extended partial match check that tries simple morphological variants.
-    E.g., removing trailing 's', 'es', etc., or a basic lemma-like approach.
-    """
-    base_candidate = token.lower().rstrip(".,;:!?-").replace("'s", "")
-
-    # Remove common plural suffixes
-    if base_candidate.endswith("s"):
-        base_candidate = base_candidate[:-1]
-    if base_candidate.endswith("es"):
-        base_candidate = base_candidate[:-2]
-
-    key = "morph_" + base_candidate
-    if key in cache:
-        return cache[key]
-
+    """Extended partial match: try simple morphological variants (removing trailing plural suffixes)."""
+    base = token.lower().rstrip(".,;:!?-").replace("'s", "")
+    if base.endswith("es"):
+        base = base[:-2]
+    elif base.endswith("s"):
+        base = base[:-1]
+    key = "morph_" + base
+    if key in cache: return cache[key]
     for drug in short_drugs:
-        # If the drug is in the base_candidate or vice versa
-        # or if they share a substring of length >= 4
-        if drug in base_candidate or base_candidate in drug:
+        if drug in base or base in drug:
             cache[key] = True
             return True
-        # You could also incorporate a small edit-distance check here.
-
     cache[key] = False
     return False
 
 
-##################################################
-# Individual feature extraction steps
-##################################################
-
-def extract_basic_features(t, tokenFeatures):
-    """Basic form features (same as your original approach)."""
-    tokenFeatures.append("form=" + t)
-    tokenFeatures.append("formLower=" + t.lower())
-
+def extract_basic_features(t, feats):
+    """Add basic form features."""
+    feats += ["form=" + t, "formLower=" + t.lower()]
     if len(t) >= 3:
-        tokenFeatures.append("pref3=" + t[:3].lower())
-        tokenFeatures.append("suf3=" + t[-3:].lower())
+        feats += ["pref3=" + t[:3].lower(), "suf3=" + t[-3:].lower()]
     if len(t) >= 4:
-        tokenFeatures.append("pref4=" + t[:4].lower())
-        tokenFeatures.append("suf4=" + t[-4:].lower())
+        feats += ["pref4=" + t[:4].lower(), "suf4=" + t[-4:].lower()]
     if len(t) >= 5:
-        tokenFeatures.append("pref5=" + t[:5].lower())
-        tokenFeatures.append("suf5=" + t[-5:].lower())
+        feats += ["pref5=" + t[:5].lower(), "suf5=" + t[-5:].lower()]
 
 
-def extract_character_features(t, tokenFeatures, chemical_patterns,
-                               common_drug_prefixes, common_drug_suffixes):
-    """Character-level features, including original logic plus shape."""
-    # Character n-grams
-    for ngram in char_ngrams(t, 2):
-        tokenFeatures.append("char2gram=" + ngram)
-
-    # Word shape
-    w_shape = word_shape(t)
-    tokenFeatures.append("wordShape=" + w_shape)
-
-    # Casing
-    tokenFeatures.append("casing=" + casing(t))
-
-    # Additional checks
-    if any(char.isdigit() for char in t):
-        tokenFeatures.append("hasDigit=true")
-    if "-" in t:
-        tokenFeatures.append("hasHyphen=true")
-    if "(" in t or ")" in t:
-        tokenFeatures.append("hasParenthesis=true")
-    if "[" in t or "]" in t:
-        tokenFeatures.append("hasBracket=true")
-
-    if has_chemical_pattern(t, chemical_patterns):
-        tokenFeatures.append("hasChemicalPattern=true")
-    if has_drug_affix(t, common_drug_prefixes, common_drug_suffixes):
-        tokenFeatures.append("hasDrugAffix=true")
-
-    if len(t) > 10:
-        tokenFeatures.append("isLongWord=true")
+def extract_character_features(t, feats, chemical_patterns, common_drug_prefixes, common_drug_suffixes):
+    """Add character-level features including n-grams, word shape and casing."""
+    for ng in char_ngrams(t, 2):
+        feats.append("char2gram=" + ng)
+    feats.append("wordShape=" + word_shape(t))
+    feats.append("casing=" + casing(t))
+    if any(c.isdigit() for c in t): feats.append("hasDigit=true")
+    if "-" in t: feats.append("hasHyphen=true")
+    if "(" in t or ")" in t: feats.append("hasParenthesis=true")
+    if "[" in t or "]" in t: feats.append("hasBracket=true")
+    if has_chemical_pattern(t, chemical_patterns): feats.append("hasChemicalPattern=true")
+    if has_drug_affix(t, common_drug_prefixes, common_drug_suffixes): feats.append("hasDrugAffix=true")
+    if len(t) > 10: feats.append("isLongWord=true")
 
 
-def extract_context_features(tokens, k, tokenFeatures):
-    """Extract local context features (previous/next tokens)."""
+def extract_context_features(tokens, k, feats):
+    """Add context features (previous/next tokens and n-gram context)."""
     if k > 0:
         tPrev = tokens[k - 1][0]
-        tokenFeatures.append("formPrev=" + tPrev)
-        tokenFeatures.append("formLowerPrev=" + tPrev.lower())
-        tokenFeatures.append("casingPrev=" + casing(tPrev))
-        # Bigram
-        tokenFeatures.append("bigram=" + tPrev.lower() + "_" + tokens[k][0].lower())
-
+        feats += ["formPrev=" + tPrev, "formLowerPrev=" + tPrev.lower(), "casingPrev=" + casing(tPrev),
+                  "bigram=" + tPrev.lower() + "_" + tokens[k][0].lower()]
         if k > 1:
             tPrev2 = tokens[k - 2][0]
-            tokenFeatures.append("formPrev2=" + tPrev2)
-            # Trigram
-            trigram = (tPrev2.lower() + "_" + tPrev.lower() + "_" + tokens[k][0].lower())
-            tokenFeatures.append("trigram=" + trigram)
+            feats.append("formPrev2=" + tPrev2)
+            feats.append("trigram=" + tPrev2.lower() + "_" + tPrev.lower() + "_" + tokens[k][0].lower())
     else:
-        tokenFeatures.append("BoS")
-
+        feats.append("BoS")
     if k < len(tokens) - 1:
         tNext = tokens[k + 1][0]
-        tokenFeatures.append("formNext=" + tNext)
-        tokenFeatures.append("formLowerNext=" + tNext.lower())
-        tokenFeatures.append("casingNext=" + casing(tNext))
-
+        feats += ["formNext=" + tNext, "formLowerNext=" + tNext.lower(), "casingNext=" + casing(tNext)]
         if k < len(tokens) - 2:
-            tNext2 = tokens[k + 2][0]
-            tokenFeatures.append("formNext2=" + tNext2)
+            feats.append("formNext2=" + tokens[k + 2][0])
     else:
-        tokenFeatures.append("EoS")
+        feats.append("EoS")
 
 
-def extract_lexicon_features(tokens, k, tokenFeatures, lexicon_data):
-    """Extended dictionary-based features with basic normalizations."""
+def extract_lexicon_features(tokens, k, feats, lexicon_data):
+    """Add features based on lexicon matches with normalization and window checks."""
     surface1 = tokens[k][0].lower().rstrip(".,;:!?-")
-    # Remove basic plural endings
     normed = surface1
     if normed.endswith("'s"):
         normed = normed[:-2]
-    if normed.endswith("s"):
+    elif normed.endswith("s"):
         normed = normed[:-1]
-
-    # Grab windows if needed
-    # (Same as original, but we can also do normed versions.)
-    surface2 = (tokens[k][0] + " " + tokens[k + 1][0]).lower() if (k < len(tokens) - 1) else ""
-    surface3 = ""
-    if k < len(tokens) - 2:
-        surface3 = (tokens[k][0] + " " + tokens[k + 1][0] + " " + tokens[k + 2][0]).lower()
-
-    # Unpack
-    drugbank_lexicon = lexicon_data['drugbank_lexicon']
+    surface2 = (tokens[k][0] + " " + tokens[k + 1][0]).lower() if k < len(tokens) - 1 else ""
+    surface3 = (tokens[k][0] + " " + tokens[k + 1][0] + " " + tokens[k + 2][0]).lower() if k < len(tokens) - 2 else ""
+    drugbank_lex = lexicon_data['drugbank_lexicon']
     drugbank_types = lexicon_data['drugbank_types']
-    hsdb_lexicon = lexicon_data['hsdb_lexicon']
-
-    # Exact matches using normalized forms
-    if normed in drugbank_lexicon:
-        tokenFeatures.append("exactInDrugBank=true")
+    hsdb_lex = lexicon_data['hsdb_lexicon']
+    if normed in drugbank_lex:
+        feats.append("exactInDrugBank=true")
         if normed in drugbank_types:
-            tokenFeatures.append("drugType=" + drugbank_types[normed])
-
-    if normed in hsdb_lexicon:
-        tokenFeatures.append("exactInHSDB=true")
-
-    # Window-based checks (optional)
-    if surface2 in drugbank_lexicon or surface3 in drugbank_lexicon:
-        tokenFeatures.append("windowInDrugBank=true")
-    if surface2 in hsdb_lexicon or surface3 in hsdb_lexicon:
-        tokenFeatures.append("windowInHSDB=true")
-
-    # Partial matches
-    partial_match_cache_db = {}
-    partial_match_cache_hsdb = {}
-
-    if partial_match_morphological(tokens[k][0], lexicon_data['short_drugs_db'], partial_match_cache_db):
-        tokenFeatures.append("partialMatchDB=true")
-    if partial_match_morphological(tokens[k][0], lexicon_data['short_drugs_hsdb'], partial_match_cache_hsdb):
-        tokenFeatures.append("partialMatchHSDB=true")
+            feats.append("drugType=" + drugbank_types[normed])
+    if normed in hsdb_lex: feats.append("exactInHSDB=true")
+    if surface2 in drugbank_lex or surface3 in drugbank_lex: feats.append("windowInDrugBank=true")
+    if surface2 in hsdb_lex or surface3 in hsdb_lex: feats.append("windowInHSDB=true")
+    cache_db, cache_hsdb = {}, {}
+    if partial_match_morphological(tokens[k][0], lexicon_data['short_drugs_db'], cache_db):
+        feats.append("partialMatchDB=true")
+    if partial_match_morphological(tokens[k][0], lexicon_data['short_drugs_hsdb'], cache_hsdb):
+        feats.append("partialMatchHSDB=true")
 
 
-##################################################
-# NEW: Part-of-speech tagging
-##################################################
-
-def extract_pos_features(pos_tags, index, tokenFeatures):
-    """Add POS feature from the precomputed list of (token, POS)."""
-    # Check index boundary and that the tag tuple/list is valid and has a non-empty tag value
-    if index < len(pos_tags) and pos_tags[index] and len(pos_tags[index]) > 1 and pos_tags[index][1]:
-        pos_tag_value = str(pos_tags[index][1])  # Ensure string
-        tokenFeatures.append(f"pos={pos_tag_value}")
+def extract_pos_features(pos_tags, idx, feats):
+    """Add POS tag features from the precomputed list."""
+    if idx < len(pos_tags) and pos_tags[idx] and len(pos_tags[idx]) > 1 and pos_tags[idx][1]:
+        feats.append("pos=" + str(pos_tags[idx][1]))
     else:
-        # Handle missing or invalid POS tag, add a placeholder
-        tokenFeatures.append("pos=UNK")
+        feats.append("pos=UNK")
 
-    ##################################################
-
-
-# Master function: extract_features
-##################################################
 
 def extract_features(tokens, lexicon_data):
     """
-    * tokens: list of (word, start_offset, end_offset)
-    * lexicon_data: dictionary from load_lexicons() 
-    Returns: list of feature lists, each a list of strings
+    tokens: list of (word, start_offset, end_offset)
+    lexicon_data: dictionary from load_lexicons()
+    Returns a list of feature lists (each a list of feature strings).
     """
-    # Precompute POS tags for entire sentence
-    # NLTK pos_tag expects just token strings
     token_texts = [t[0] for t in tokens]
-
-    # Perform POS tagging with error handling
-    pos_tags = []
     try:
-        if token_texts:  # Avoid tagging empty list
-            pos_tags = nltk.pos_tag(token_texts)
-
-        # Validate output length and pad if necessary
+        pos_tags = nltk.pos_tag(token_texts) if token_texts else []
         if len(pos_tags) != len(token_texts):
-            print(
-                f"Warning: POS tag count ({len(pos_tags)}) != token count ({len(token_texts)}) for sentence '{' '.join(token_texts)}'. Padding with UNK.",
-                file=sys.stderr)
-            # Pad with placeholder tuples ('token_text', 'UNK')
-            pos_tags = pos_tags + [(token_texts[i] if i < len(token_texts) else 'UNK', 'UNK') for i in
-                                   range(len(pos_tags), len(token_texts))]
-
+            print(f"Warning: POS tag count ({len(pos_tags)}) != token count ({len(token_texts)}) for sentence "
+                  f"'{' '.join(token_texts)}'. Padding with UNK.", file=sys.stderr)
+            pos_tags += [(token_texts[i] if i < len(token_texts) else 'UNK', 'UNK')
+                         for i in range(len(pos_tags), len(token_texts))]
     except Exception as e:
-        print(f"Error during NLTK POS tagging for sentence '{' '.join(token_texts)}': {e}. Using UNK tags.",
-              file=sys.stderr)
-        # Create placeholder tags if tagging fails completely
+        print(f"Error during NLTK POS tagging for sentence "
+              f"'{' '.join(token_texts)}': {e}. Using UNK tags.", file=sys.stderr)
         pos_tags = [(text, 'UNK') for text in token_texts]
-
-    all_features = []
+    all_feats = []
     for k in range(len(tokens)):
         t = tokens[k][0]
-        tokenFeatures = []
-
-        # Basic
-        extract_basic_features(t, tokenFeatures)
-        # Character-level & shape
-        extract_character_features(t, tokenFeatures,
-                                   lexicon_data['chemical_patterns'],
+        feats = []
+        extract_basic_features(t, feats)
+        extract_character_features(t, feats, lexicon_data['chemical_patterns'],
                                    lexicon_data['common_drug_prefixes'],
                                    lexicon_data['common_drug_suffixes'])
-        # Context
-        extract_context_features(tokens, k, tokenFeatures)
-        # Dictionary-based
-        extract_lexicon_features(tokens, k, tokenFeatures, lexicon_data)
-        # Part-of-speech
-        extract_pos_features(pos_tags, k, tokenFeatures)
-
-        all_features.append(tokenFeatures)
-
-    return all_features
+        extract_context_features(tokens, k, feats)
+        extract_lexicon_features(tokens, k, feats, lexicon_data)
+        extract_pos_features(pos_tags, k, feats)
+        all_feats.append(feats)
+    return all_feats
