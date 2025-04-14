@@ -2,8 +2,12 @@
 """Enhanced feature extraction for a CRF-based NER system.
 Adds: POS tagging (NLTK), word shape features, expanded partial match logic, improved lexicon usage.
 """
-import nltk
 import sys
+
+import nltk
+
+from drug_n_features import extract_drug_n_features
+from embeddings import get_embedding_features
 
 
 def casing(token):
@@ -180,5 +184,18 @@ def extract_features(tokens, lexicon_data):
         extract_context_features(tokens, k, feats)
         extract_lexicon_features(tokens, k, feats, lexicon_data)
         extract_pos_features(pos_tags, k, feats)
+
+        # Add drug_n specific features if available
+        if 'drug_n_lexicon' in lexicon_data and 'drug_n_patterns' in lexicon_data:
+            drug_n_feats = extract_drug_n_features(t,
+                                                   lexicon_data['drug_n_lexicon'],
+                                                   lexicon_data['drug_n_patterns'])
+            feats.extend(drug_n_feats)
+
+        # Add word embedding features if available
+        if 'word_embeddings' in lexicon_data:
+            emb_feats = get_embedding_features(t, lexicon_data['word_embeddings'])
+            feats.extend(emb_feats)
+            
         all_feats.append(feats)
     return all_feats

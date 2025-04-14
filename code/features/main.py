@@ -1,11 +1,13 @@
 #!/usr/bin/python3
 
 import argparse
+import os
 import random
 import sys
 from os import listdir, path
 from xml.dom.minidom import parse
 
+from embeddings import load_embeddings
 from feature_extraction import extract_features
 from lexicon import load_lexicons
 from tokenization import tokenize, get_tag
@@ -15,6 +17,22 @@ random.seed(42)
 
 # Load lexicons (expects data relative to lexicon.py)
 lexicon_data = load_lexicons()
+
+# Try to load word embeddings if available
+EMBEDDING_FILE = os.environ.get("EMBEDDING_FILE", "../data/embeddings/glove.6B.50d.txt")
+EMBEDDING_DIM = int(os.environ.get("EMBEDDING_DIM", "50"))
+
+# Check if embedding file exists before attempting to load
+if os.path.exists(EMBEDDING_FILE):
+    print(f"Loading word embeddings from {EMBEDDING_FILE}...", file=sys.stderr)
+    lexicon_data['word_embeddings'] = load_embeddings(EMBEDDING_FILE, EMBEDDING_DIM)
+else:
+    print(f"Warning: Embedding file {EMBEDDING_FILE} not found. Word embedding features will not be used.",
+          file=sys.stderr)
+    print(
+        f"To use embeddings, download a pre-trained model (e.g., GloVe) and set the EMBEDDING_FILE environment variable.",
+        file=sys.stderr)
+    lexicon_data['word_embeddings'] = {}
 
 
 def process_file(filepath, outfile):

@@ -2,12 +2,21 @@
 
 import re
 
+from drug_n_features import compile_drug_n_patterns
+
 
 # Lexicon loading and preparation functions
 def load_lexicons():
     """Load drug lexicons from files and prepare related data structures."""
     drugbank_lexicon, drugbank_types = load_drugbank()
     hsdb_lexicon = load_hsdb()
+
+    # Try to load drug_n specific lexicon
+    try:
+        drug_n_lexicon = load_drug_n_lexicon()
+    except Exception as e:
+        print(f"Warning: Could not load drug_n lexicon: {e}")
+        drug_n_lexicon = set()
 
     # Create prefix and suffix sets from the lexicons for better matching
     common_drug_prefixes, common_drug_suffixes = extract_affixes(drugbank_lexicon)
@@ -19,13 +28,18 @@ def load_lexicons():
     # Precompile regex patterns for better performance
     chemical_patterns = compile_chemical_patterns()
 
+    # Compile drug_n specific patterns
+    drug_n_patterns = compile_drug_n_patterns()
+
     return {
         'drugbank_lexicon': drugbank_lexicon,
         'drugbank_types': drugbank_types,
         'hsdb_lexicon': hsdb_lexicon,
+        'drug_n_lexicon': drug_n_lexicon,
         'common_drug_prefixes': common_drug_prefixes,
         'common_drug_suffixes': common_drug_suffixes,
         'chemical_patterns': chemical_patterns,
+        'drug_n_patterns': drug_n_patterns,
         'short_drugs_db': short_drugs_db,
         'short_drugs_hsdb': short_drugs_hsdb
     }
@@ -53,6 +67,17 @@ def load_hsdb():
         hsdb_lexicon = set(line.strip().lower() for line in f if line.strip())
 
     return hsdb_lexicon
+
+
+def load_drug_n_lexicon():
+    """Load drug_n specific lexicon if available."""
+    try:
+        with open("../data/lexicon/drug_n.txt", encoding="utf-8") as f:
+            drug_n_lexicon = set(line.strip().lower() for line in f if line.strip())
+        return drug_n_lexicon
+    except FileNotFoundError:
+        # Create an empty set if the file doesn't exist
+        return set()
 
 
 def extract_affixes(drug_lexicon):
