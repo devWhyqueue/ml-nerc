@@ -1,8 +1,3 @@
-Below is a markdown file that explains in detail each of the engineered features present in the enhanced NER feature
-extraction system.
-
----
-
 # Engineered Features in the Enhanced NER System
 
 This document provides a comprehensive explanation of the engineered features incorporated into our Conditional Random
@@ -96,6 +91,55 @@ Part-of-speech tagging is incorporated to provide syntactic context to each toke
 
 ---
 
+## 6. Drug N (Non-Proprietary Drug Name) Features
+
+These features are specialized for recognizing non-proprietary (generic) drug names, leveraging an expanded lexicon and
+FDA-derived patterns:
+
+- **Lexicon Membership**:
+  - `exactDrugNMatch=true`: Exact normalized token match in the curated drug N lexicon.
+  - `drugNLexiconMatch=true`: Token found in drug N lexicon.
+  - `partialDrugNMatch=true`: Partial match based on substring or pattern checks.
+- **Prefix/Suffix Indexing**:
+  - `drugNSuffix_*`: Token has a common drug N suffix (e.g., `drugNSuffix_ine=true`).
+  - `drugNHasCommonSuffix=true`: Token has a known suffix.
+  - `drugNPrefix_*`: Token has a common drug N prefix (e.g., `drugNPrefix_ace=true`).
+  - `drugNHasCommonPrefix=true`: Token has a known prefix.
+- **FDA Pattern Matching**:
+  - `drugNPatternMatch=true`: Token matches any FDA-derived regex pattern.
+  - `drugNPattern{i}=true`: Token matches the i-th FDA-derived pattern.
+- **Partial Morphological Matching**: Looks for significant substring matches after normalization, to catch variations
+  of drug names.
+- **Miscellaneous Drug N Features**:
+  - `drugNTypicalLength=true`: Normalized token length between 3 and 15.
+  - `drugNMixedWithNumbers=true`: Token contains both letters and digits.
+  - `drugNMultiWord=true`: Token contains multiple word parts (e.g., "alpha lipoic acid").
+  - `drugNCapitalized=true`: Token is capitalized (first letter uppercase).
+  - `drugNHasHyphen=true`: Token contains a hyphen.
+  - `drugNHasAlphanumericHyphen=true`: Token contains a hyphen between letters and digits (e.g., "SCH-23390").
+  - `drugNHasRomanNumeral=true`: Token contains a space followed by a Roman numeral (e.g., "buforin II").
+  - `drugNHasChemicalPattern=true`: Token matches chemical-like patterns (e.g., "1,2-dimethyl").
+  - `drugNIsAbbreviation=true`: Token is all uppercase and 2-5 characters long.
+  - `drugNKnownEntity=true`: Token contains a substring of a known problematic drug entity (e.g., "mptp").
+
+These features are designed for high recall and precision, and are optimized for performance on large lexicons.
+
+---
+
+## 7. Embedding Features
+
+Word embedding features are extracted if pre-trained embeddings are available:
+
+- **Discretized Embedding Bins**: For each embedding dimension, the value is binned to reduce feature space (e.g.,
+  `emb_0=2`).
+- **Truncated Embeddings**: Optionally, only the first N dimensions are used for efficiency (e.g., `emb_0=0.1234`).
+- **OOV Handling**: If a token is out-of-vocabulary, `emb_OOV=true` is used. If embeddings are unavailable,
+  `emb_unavailable=true` is set.
+
+Embeddings provide dense, semantic information about tokens, augmenting the surface-level and lexicon-based features.
+
+---
+
 ## Summary
 
 The feature engineering approach in this system is designed to offer a rich, multi-faceted representation of each token.
@@ -110,8 +154,3 @@ By combining:
 the system aims to provide robust inputs for the CRF model, enhancing its ability to identify and classify named
 entities effectively. This multi-layered feature setup is particularly valuable for complex tasks such as recognizing
 pharmacological entities where both morphology and context play key roles.
-
----
-
-This explanation provides an overview of how each engineered feature contributes to the overall NER system's performance
-and effectiveness.

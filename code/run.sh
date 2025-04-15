@@ -6,9 +6,6 @@ OUTPUT_DIR="$BASEDIR/.output"
 # Create output directory if it doesn't exist
 mkdir -p "$OUTPUT_DIR"
 
-# Install tokenizer
-python -m nltk.downloader punkt_tab averaged_perceptron_tagger_eng
-
 # convert datasets to feature vectors
 echo "Extracting features..."
 python features/main.py $BASEDIR/data/train/ > "$OUTPUT_DIR/train.feat"
