@@ -5,3 +5,4 @@
 *.feat
 *.pyc
 .idea
+glove*

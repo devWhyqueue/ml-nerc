@@ -71,13 +71,10 @@ def load_hsdb():
 
 def load_drug_n_lexicon():
     """Load drug_n specific lexicon if available."""
-    try:
-        with open("../data/lexicon/drug_n.txt", encoding="utf-8") as f:
-            drug_n_lexicon = set(line.strip().lower() for line in f if line.strip())
-        return drug_n_lexicon
-    except FileNotFoundError:
-        # Create an empty set if the file doesn't exist
-        return set()
+    from drug_n_features import load_drug_n_lexicon as load_drug_n_lexicon_enhanced
+
+    # Use the enhanced version from drug_n_features.py
+    return load_drug_n_lexicon_enhanced()
 
 
 def extract_affixes(drug_lexicon):

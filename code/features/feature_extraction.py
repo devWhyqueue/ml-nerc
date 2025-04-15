@@ -192,6 +192,59 @@ def extract_features(tokens, lexicon_data):
                                                    lexicon_data['drug_n_patterns'])
             feats.extend(drug_n_feats)
 
+            # Add context-aware drug_n features
+            if drug_n_feats:
+                # Check for surrounding context that indicates drug_n
+                context_words = []
+                window_size = 3  # Increased from 2 to 3 for better context
+
+                # Get surrounding words
+                for i in range(max(0, k - window_size), min(len(tokens), k + window_size + 1)):
+                    if i != k:
+                        context_words.append(tokens[i][0].lower())
+
+                # Check for contextual clues that indicate drug_n
+                drug_n_context_terms = {
+                    'generic', 'nonproprietary', 'non-proprietary', 'name',
+                    'chemical', 'compound', 'substance', 'active', 'ingredient',
+                    'inn', 'usan', 'molecule', 'agent', 'drug', 'formula',
+                    'acid', 'salt', 'metabolite', 'derivative', 'analog',
+                    'isomer', 'base', 'element', 'receptor'
+                }
+
+                if any(term in ' '.join(context_words).lower() for term in drug_n_context_terms):
+                    feats.append("drugNContext=true")
+
+                # Check if the token appears in a list or enumeration of drugs
+                if k > 0 and k < len(tokens) - 1:
+                    if tokens[k - 1][0] in [',', 'and', 'or'] and any(
+                            f.startswith("drugN") for f in all_feats[k - 1] if k - 1 < len(all_feats)):
+                        feats.append("drugNInList=true")
+
+                # Check for parenthetical context (often indicates drug_n)
+                if k > 0 and tokens[k - 1][0] == '(' and k < len(tokens) - 1 and tokens[k + 1][0] == ')':
+                    feats.append("drugNInParentheses=true")
+
+                # Check for abbreviation pattern (often indicates drug_n)
+                if t.isupper() and 2 <= len(t) <= 5:
+                    feats.append("drugNIsAbbreviation=true")
+
+                # Check for specific patterns that distinguish drug_n from regular drug
+                if any(f.startswith("drugNKnownEntity") for f in drug_n_feats):
+                    # These are known problematic entities, give them a stronger signal
+                    feats.append("drugNStrongSignal=true")
+
+                # Check for patterns that are very likely to be drug_n
+                if (any(f.startswith("drugNHasChemicalPattern") for f in drug_n_feats) or
+                        any(f.startswith("drugNHasRomanNumeral") for f in drug_n_feats) or
+                        any(f.startswith("drugNHasAlphanumericHyphen") for f in drug_n_feats)):
+                    feats.append("drugNVeryLikely=true")
+
+                # Check for capitalization patterns
+                if t[0].isupper() and not all(c.isupper() for c in t):
+                    # Mixed case with first letter capitalized is common for drug_n
+                    feats.append("drugNMixedCase=true")
+        
         # Add word embedding features if available
         if 'word_embeddings' in lexicon_data:
             emb_feats = get_embedding_features(t, lexicon_data['word_embeddings'])
