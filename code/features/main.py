@@ -15,27 +15,32 @@ from tokenization import tokenize, get_tag
 # Set random seed for reproducibility
 random.seed(42)
 
-# Load lexicons (expects data relative to lexicon.py)
-lexicon_data = load_lexicons()
 
-# Try to load word embeddings if available
-EMBEDDING_FILE = os.environ.get("EMBEDDING_FILE", "../data/embeddings/glove.6B.50d.txt")
-EMBEDDING_DIM = int(os.environ.get("EMBEDDING_DIM", "50"))
+def load_resources():
+    """Load lexicons and word embeddings if available."""
+    # Load lexicons (expects data relative to lexicon.py)
+    lexicon_data = load_lexicons()
 
-# Check if embedding file exists before attempting to load
-if os.path.exists(EMBEDDING_FILE):
-    print(f"Loading word embeddings from {EMBEDDING_FILE}...", file=sys.stderr)
-    lexicon_data['word_embeddings'] = load_embeddings(EMBEDDING_FILE, EMBEDDING_DIM)
-else:
-    print(f"Warning: Embedding file {EMBEDDING_FILE} not found. Word embedding features will not be used.",
-          file=sys.stderr)
-    print(
-        f"To use embeddings, download a pre-trained model (e.g., GloVe) and set the EMBEDDING_FILE environment variable.",
-        file=sys.stderr)
-    lexicon_data['word_embeddings'] = {}
+    # Try to load word embeddings if available
+    EMBEDDING_FILE = os.environ.get("EMBEDDING_FILE", "../data/embeddings/glove.6B.50d.txt")
+    EMBEDDING_DIM = int(os.environ.get("EMBEDDING_DIM", "50"))
+
+    # Check if embedding file exists before attempting to load
+    if os.path.exists(EMBEDDING_FILE):
+        print(f"Loading word embeddings from {EMBEDDING_FILE}...", file=sys.stderr)
+        lexicon_data['word_embeddings'] = load_embeddings(EMBEDDING_FILE, EMBEDDING_DIM)
+    else:
+        print(f"Warning: Embedding file {EMBEDDING_FILE} not found. Word embedding features will not be used.",
+              file=sys.stderr)
+        print(
+            f"To use embeddings, download a pre-trained model (e.g., GloVe) and set the EMBEDDING_FILE environment variable.",
+            file=sys.stderr)
+        lexicon_data['word_embeddings'] = {}
+
+    return lexicon_data
 
 
-def process_file(filepath, outfile):
+def process_file(filepath, outfile, lexicon_data):
     """Process a single XML file and write features to the output file."""
     # Parse XML file, obtaining a DOM tree
     tree = parse(filepath)
@@ -118,12 +123,15 @@ def main():
     args = parser.parse_args()
 
     try:
+        # Load resources only when the script is executed directly
+        lexicon_data = load_resources()
+        
         # Process each file in the input directory and write to stdout
         for filename in listdir(args.input_dir):
             if filename.endswith(".xml"):
                 filepath = path.join(args.input_dir, filename)
                 if path.isfile(filepath):  # Ensure it's a file
-                    process_file(filepath, sys.stdout)  # Write directly to stdout
+                    process_file(filepath, sys.stdout, lexicon_data)  # Pass lexicon_data as argument
         print(f"Feature extraction complete.", file=sys.stderr)
     except Exception as e:
         print(f"An unexpected error occurred: {e}", file=sys.stderr)

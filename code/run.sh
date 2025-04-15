@@ -20,8 +20,10 @@ python train-crf.py "$OUTPUT_DIR/model.crf" < "$OUTPUT_DIR/train.feat"
 # run CRF model
 echo "Running CRF model..."
 python predict.py "$OUTPUT_DIR/model.crf" < "$OUTPUT_DIR/devel.feat" > "$OUTPUT_DIR/devel-CRF.out"
+python predict.py "$OUTPUT_DIR/model.crf" < "$OUTPUT_DIR/train.feat" > "$OUTPUT_DIR/train-CRF.out"
 # evaluate CRF results
 echo "Evaluating CRF results..."
+python evaluator.py NER $BASEDIR/data/train "$OUTPUT_DIR/train-CRF.out" > "$OUTPUT_DIR/train-CRF.stats"
 python evaluator.py NER $BASEDIR/data/devel "$OUTPUT_DIR/devel-CRF.out" > "$OUTPUT_DIR/devel-CRF.stats"
 
 

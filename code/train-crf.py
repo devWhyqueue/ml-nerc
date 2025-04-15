@@ -48,7 +48,9 @@ if __name__ == '__main__':
 
     # This demonstrates how to list parameters and obtain their values.
     trainer.set('feature.minfreq', 1)  # mininum frequecy of a feature to consider it
-    trainer.set('c2', 0.001)  # coefficient for L2 regularization
+    trainer.set('c1', 0.001)  # L1 strength
+    trainer.set('c2', 0.0)  # L2 strength
+    trainer.set('max_iterations', 800)  # maximum number of iterations
 
     print("Training with following parameters: ")
     for name in trainer.params():
