@@ -30,19 +30,6 @@ def char_ngrams(token, n):
         return [token.lower()]
     return [token[i:i + n].lower() for i in range(min(5, len(token) - n + 1))]
 
-
-def has_chemical_pattern(token, chemical_patterns):
-    """Return True if token matches any chemical regex pattern."""
-    return any(pattern.search(token) for pattern in chemical_patterns)
-
-
-def has_drug_affix(token, common_drug_prefixes, common_drug_suffixes):
-    """Return True if token has drug-like prefix or suffix."""
-    t = token.lower()
-    if len(t) < 3: return False
-    return t[:3] in common_drug_prefixes or t[-3:] in common_drug_suffixes
-
-
 def word_shape(token):
     """Return a simplified shape of the token (e.g., 'Acetaminophen' -> 'Xxxxxxxxxxxxx')."""
     shape = []
