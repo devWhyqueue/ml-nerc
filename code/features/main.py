@@ -7,6 +7,8 @@ import sys
 from os import listdir, path
 from xml.dom.minidom import parse
 
+from tqdm import tqdm
+
 from embeddings import load_embeddings
 from feature_extraction import extract_features
 from lexicon import load_lexicons
@@ -127,7 +129,7 @@ def main():
         lexicon_data = load_resources()
         
         # Process each file in the input directory and write to stdout
-        for filename in listdir(args.input_dir):
+        for filename in tqdm(listdir(args.input_dir), desc="Extracting features"):
             if filename.endswith(".xml"):
                 filepath = path.join(args.input_dir, filename)
                 if path.isfile(filepath):  # Ensure it's a file

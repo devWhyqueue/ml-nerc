@@ -7,8 +7,9 @@ OUTPUT_DIR="$BASEDIR/.output"
 mkdir -p "$OUTPUT_DIR"
 
 # convert datasets to feature vectors
-echo "Extracting features..."
+echo "Extracting train features..."
 python features/main.py $BASEDIR/data/train/ > "$OUTPUT_DIR/train.feat"
+echo "Extracting devel features..."
 python features/main.py $BASEDIR/data/devel/ > "$OUTPUT_DIR/devel.feat"
 
 # train CRF model
@@ -30,10 +31,10 @@ cat "$OUTPUT_DIR/train.feat" | cut -f5- | grep -v ^$ > "$OUTPUT_DIR/train.clf.fe
 
 # train Naive Bayes model
 echo "Training Naive Bayes model..."
-python train-sklearn.py "$OUTPUT_DIR/model.joblib" "$OUTPUT_DIR/vectorizer.joblib" < "$OUTPUT_DIR/train.clf.feat"
+python train-nb.py "$OUTPUT_DIR/model.joblib" "$OUTPUT_DIR/vectorizer.joblib" < "$OUTPUT_DIR/train.clf.feat"
 # run Naive Bayes model
 echo "Running Naive Bayes model..."
-python predict-sklearn.py "$OUTPUT_DIR/model.joblib" "$OUTPUT_DIR/vectorizer.joblib" < "$OUTPUT_DIR/devel.feat" > "$OUTPUT_DIR/devel-NB.out"
+python predict-nb.py "$OUTPUT_DIR/model.joblib" "$OUTPUT_DIR/vectorizer.joblib" < "$OUTPUT_DIR/devel.feat" > "$OUTPUT_DIR/devel-NB.out"
 # evaluate Naive Bayes results 
 echo "Evaluating Naive Bayes results..."
 python evaluator.py NER $BASEDIR/data/devel "$OUTPUT_DIR/devel-NB.out" > "$OUTPUT_DIR/devel-NB.stats"

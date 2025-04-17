@@ -12,9 +12,7 @@ These features capture the raw form and normalized versions of each token.
 
 - **Token Form**: The original token as it appears in the text.
 - **Lowercase Form**: The token converted to lowercase. This normalization helps alleviate case-sensitivity issues.
-- **Prefix and Suffix Features**: For tokens of sufficient length, prefixes and suffixes of lengths 3, 4, and 5 are
-  extracted. These features capture sub-word patterns that may be indicative of certain entity types (e.g., drug names
-  often have common prefixes/suffixes).
+- **Prefix and Suffix Features**: For tokens of sufficient length, prefixes and suffixes of lengths 3 and 4 are extracted. These features capture sub-word patterns that may be indicative of certain entity types.
 
 ---
 
@@ -23,8 +21,7 @@ These features capture the raw form and normalized versions of each token.
 Character-level features provide insights into the makeup of each token from the perspective of individual characters
 and short sequences.
 
-- **Character n-grams**: Extracts contiguous substrings (n-grams) of length 2. The extraction is limited to a maximum of
-  5 n-grams per token to maintain performance. These n-grams are useful to capture local character patterns.
+- **Character n-grams**: Extracts contiguous substrings (n-grams) of length 2. Extraction is limited to a maximum of 5 n-grams per token.
 - **Word Shape**: Transforms the token into a simplified “shape”. For example, "Acetaminophen" becomes `Xxxxxxxxxxxxx`
   and "FDA" becomes `XXX`. This abstraction helps the model understand patterns like capitalization and the presence of
   digits, without relying on the exact characters.
@@ -37,10 +34,8 @@ Additional checks also implemented include:
 - **Has Hyphen**: Flags tokens that contain a hyphen, common in composite drug names or multi-part entities.
 - **Has Parenthesis/Bracket**: Indicates if tokens contain parentheses or brackets, which can be used to isolate
   additional details within text.
-- **Chemical Pattern Detection**: Uses pre-defined regex patterns to identify tokens that match known chemical
-  structures.
-- **Drug Affix Detection**: Checks for common drug-like prefixes or suffixes by normalizing the token and comparing it
-  to known patterns.
+- **Chemical Pattern Detection**: Uses pre-defined regex patterns to identify tokens that match simple chemical-like structures.
+- **Drug Affix Detection**: Checks for common drug-like prefixes or suffixes by normalizing the token and comparing it to known patterns.
 - **Long Word Identification**: Marks tokens longer than 10 characters. Such tokens sometimes indicate complex drug
   names or other lengthy entities.
 
@@ -64,20 +59,9 @@ help the model better predict the entity type:
 
 ## 4. Lexicon-based Features
 
-Lexicon-based features incorporate external domain knowledge from curated dictionaries such as DrugBank and HSDB.
+Lexicon-based features incorporate external domain knowledge from curated dictionaries of approved and not approved drug names.
 
-- **Normalized Token Matching**: Tokens are normalized (by lowercasing and removing simple plural endings) before
-  matching against the lexicons.
-- **Exact Match**: Checks if the normalized token exists in either the DrugBank or HSDB lexicon. When an exact match is
-  found, a feature is added (e.g., `exactInDrugBank=true`).
-- **Drug Type Feature**: If the normalized token is found in the DrugBank lexicon along with a corresponding type, that
-  type is recorded.
-- **Window-based Matching**: Considers two- and three-token windows to capture multi-word entities. If these token
-  groups match entries in the lexicons, relevant features are set.
-- **Partial Morphological Matching**: Applies a simple morphological normalization (removing common plural endings and
-  other suffixes) and then checks if there is any significant substring match between the token and a list of short drug
-  names. This feature is particularly useful when the surface forms vary slightly but represent the same underlying
-  drug.
+- **Fuzzy Lexicon Matching**: Uses fuzzy string matching (via rapidfuzz, cutoff 85) to check if the token approximately matches any entry in the approved or not approved drug lexicons. Features `fuzzyApprovedDrugsLexicon=true` or `fuzzyNotApprovedDrugsLexicon=true` are added if a match is found.
 
 ---
 
@@ -91,47 +75,11 @@ Part-of-speech tagging is incorporated to provide syntactic context to each toke
 
 ---
 
-## 6. Drug N (Non-Proprietary Drug Name) Features
-
-These features are specialized for recognizing non-proprietary (generic) drug names, leveraging an expanded lexicon and
-FDA-derived patterns:
-
-- **Lexicon Membership**:
-  - `exactDrugNMatch=true`: Exact normalized token match in the curated drug N lexicon.
-  - `drugNLexiconMatch=true`: Token found in drug N lexicon.
-  - `partialDrugNMatch=true`: Partial match based on substring or pattern checks.
-- **Prefix/Suffix Indexing**:
-  - `drugNSuffix_*`: Token has a common drug N suffix (e.g., `drugNSuffix_ine=true`).
-  - `drugNHasCommonSuffix=true`: Token has a known suffix.
-  - `drugNPrefix_*`: Token has a common drug N prefix (e.g., `drugNPrefix_ace=true`).
-  - `drugNHasCommonPrefix=true`: Token has a known prefix.
-- **FDA Pattern Matching**:
-  - `drugNPatternMatch=true`: Token matches any FDA-derived regex pattern.
-  - `drugNPattern{i}=true`: Token matches the i-th FDA-derived pattern.
-- **Partial Morphological Matching**: Looks for significant substring matches after normalization, to catch variations
-  of drug names.
-- **Miscellaneous Drug N Features**:
-  - `drugNTypicalLength=true`: Normalized token length between 3 and 15.
-  - `drugNMixedWithNumbers=true`: Token contains both letters and digits.
-  - `drugNMultiWord=true`: Token contains multiple word parts (e.g., "alpha lipoic acid").
-  - `drugNCapitalized=true`: Token is capitalized (first letter uppercase).
-  - `drugNHasHyphen=true`: Token contains a hyphen.
-  - `drugNHasAlphanumericHyphen=true`: Token contains a hyphen between letters and digits (e.g., "SCH-23390").
-  - `drugNHasRomanNumeral=true`: Token contains a space followed by a Roman numeral (e.g., "buforin II").
-  - `drugNHasChemicalPattern=true`: Token matches chemical-like patterns (e.g., "1,2-dimethyl").
-  - `drugNIsAbbreviation=true`: Token is all uppercase and 2-5 characters long.
-  - `drugNKnownEntity=true`: Token contains a substring of a known problematic drug entity (e.g., "mptp").
-
-These features are designed for high recall and precision, and are optimized for performance on large lexicons.
-
----
-
-## 7. Embedding Features
+## 6. Embedding Features
 
 Word embedding features are extracted if pre-trained embeddings are available:
 
-- **Discretized Embedding Bins**: For each embedding dimension, the value is binned to reduce feature space (e.g.,
-  `emb_0=2`).
+- **Discretized Embedding Bins**: For each embedding dimension, the value is binned to reduce feature space (e.g., `emb_0=2`).
 - **Truncated Embeddings**: Optionally, only the first N dimensions are used for efficiency (e.g., `emb_0=0.1234`).
 - **OOV Handling**: If a token is out-of-vocabulary, `emb_OOV=true` is used. If embeddings are unavailable,
   `emb_unavailable=true` is set.

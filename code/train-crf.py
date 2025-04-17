@@ -111,10 +111,9 @@ if __name__ == '__main__':
     trainer.select('lbfgs', 'crf1d')
 
     # This demonstrates how to list parameters and obtain their values.
-    trainer.set('feature.minfreq', 1)  # mininum frequecy of a feature to consider it
     trainer.set('c1', 0.001)  # L1 strength
-    trainer.set('c2', 0.00)  # L2 strength - increased from 0.0 to 0.01 to reduce overfitting
-    trainer.set('max_iterations', 800)  # maximum number of iterations
+    trainer.set('c2', 0.00)  # L2 strength
+    trainer.set("epsilon", 1e-3)
 
     print("Training with following parameters: ")
     for name in trainer.params():

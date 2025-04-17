@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 
 import sys
+
+import numpy as np
+from joblib import dump
 from sklearn.feature_extraction import DictVectorizer
 from sklearn.naive_bayes import MultinomialNB
-import numpy as np
-import argparse
-from joblib import dump
-
 
 
 def fix_format(token):

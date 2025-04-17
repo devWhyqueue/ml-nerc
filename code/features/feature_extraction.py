@@ -5,8 +5,8 @@ Adds: POS tagging (NLTK), word shape features, expanded partial match logic, imp
 import sys
 
 import nltk
+from rapidfuzz import process, fuzz
 
-from drug_n_features import extract_drug_n_features
 from embeddings import get_embedding_features
 
 
@@ -40,7 +40,7 @@ def has_drug_affix(token, common_drug_prefixes, common_drug_suffixes):
     """Return True if token has drug-like prefix or suffix."""
     t = token.lower()
     if len(t) < 3: return False
-    return (t[:3] in common_drug_prefixes or t[-3:] in common_drug_suffixes)
+    return t[:3] in common_drug_prefixes or t[-3:] in common_drug_suffixes
 
 
 def word_shape(token):
@@ -56,23 +56,6 @@ def word_shape(token):
     return "".join(shape)
 
 
-def partial_match_morphological(token, short_drugs, cache):
-    """Extended partial match: try simple morphological variants (removing trailing plural suffixes)."""
-    base = token.lower().rstrip(".,;:!?-").replace("'s", "")
-    if base.endswith("es"):
-        base = base[:-2]
-    elif base.endswith("s"):
-        base = base[:-1]
-    key = "morph_" + base
-    if key in cache: return cache[key]
-    for drug in short_drugs:
-        if drug in base or base in drug:
-            cache[key] = True
-            return True
-    cache[key] = False
-    return False
-
-
 def extract_basic_features(t, feats):
     """Add basic form features."""
     feats += ["form=" + t, "formLower=" + t.lower()]
@@ -84,7 +67,7 @@ def extract_basic_features(t, feats):
         feats += ["pref5=" + t[:5].lower(), "suf5=" + t[-5:].lower()]
 
 
-def extract_character_features(t, feats, chemical_patterns, common_drug_prefixes, common_drug_suffixes):
+def extract_character_features(t, feats):
     """Add character-level features including n-grams, word shape and casing."""
     for ng in char_ngrams(t, 2):
         feats.append("char2gram=" + ng)
@@ -94,8 +77,6 @@ def extract_character_features(t, feats, chemical_patterns, common_drug_prefixes
     if "-" in t: feats.append("hasHyphen=true")
     if "(" in t or ")" in t: feats.append("hasParenthesis=true")
     if "[" in t or "]" in t: feats.append("hasBracket=true")
-    if has_chemical_pattern(t, chemical_patterns): feats.append("hasChemicalPattern=true")
-    if has_drug_affix(t, common_drug_prefixes, common_drug_suffixes): feats.append("hasDrugAffix=true")
     if len(t) > 10: feats.append("isLongWord=true")
 
 
@@ -120,31 +101,28 @@ def extract_context_features(tokens, k, feats):
         feats.append("EoS")
 
 
+_fuzzy_cache = {}
+
+
+def fuzzy_lexicon_match(token, lexicon_list, cutoff=85):
+    global _fuzzy_cache
+    t_norm = token.lower().strip()
+    cache_key = (t_norm, id(lexicon_list))
+    if cache_key in _fuzzy_cache:
+        return _fuzzy_cache[cache_key]
+    match = process.extractOne(t_norm, lexicon_list, scorer=fuzz.ratio, score_cutoff=cutoff)
+    result = match is not None
+    _fuzzy_cache[cache_key] = result
+    return result
+
+
 def extract_lexicon_features(tokens, k, feats, lexicon_data):
-    """Add features based on lexicon matches with normalization and window checks."""
-    surface1 = tokens[k][0].lower().rstrip(".,;:!?-")
-    normed = surface1
-    if normed.endswith("'s"):
-        normed = normed[:-2]
-    elif normed.endswith("s"):
-        normed = normed[:-1]
-    surface2 = (tokens[k][0] + " " + tokens[k + 1][0]).lower() if k < len(tokens) - 1 else ""
-    surface3 = (tokens[k][0] + " " + tokens[k + 1][0] + " " + tokens[k + 2][0]).lower() if k < len(tokens) - 2 else ""
-    drugbank_lex = lexicon_data['drugbank_lexicon']
-    drugbank_types = lexicon_data['drugbank_types']
-    hsdb_lex = lexicon_data['hsdb_lexicon']
-    if normed in drugbank_lex:
-        feats.append("exactInDrugBank=true")
-        if normed in drugbank_types:
-            feats.append("drugType=" + drugbank_types[normed])
-    if normed in hsdb_lex: feats.append("exactInHSDB=true")
-    if surface2 in drugbank_lex or surface3 in drugbank_lex: feats.append("windowInDrugBank=true")
-    if surface2 in hsdb_lex or surface3 in hsdb_lex: feats.append("windowInHSDB=true")
-    cache_db, cache_hsdb = {}, {}
-    if partial_match_morphological(tokens[k][0], lexicon_data['short_drugs_db'], cache_db):
-        feats.append("partialMatchDB=true")
-    if partial_match_morphological(tokens[k][0], lexicon_data['short_drugs_hsdb'], cache_hsdb):
-        feats.append("partialMatchHSDB=true")
+    token = tokens[k][0]
+    # Use rapidfuzz fuzzy matching with cache
+    if fuzzy_lexicon_match(token, lexicon_data['approved_drugs_lexicon'], cutoff=85):
+        feats.append('fuzzyApprovedDrugsLexicon=true')
+    if fuzzy_lexicon_match(token, lexicon_data['not_approved_drugs_lexicon'], cutoff=85):
+        feats.append('fuzzyNotApprovedDrugsLexicon=true')
 
 
 def extract_pos_features(pos_tags, idx, feats):
@@ -178,77 +156,12 @@ def extract_features(tokens, lexicon_data):
         t = tokens[k][0]
         feats = []
         extract_basic_features(t, feats)
-        extract_character_features(t, feats, lexicon_data['chemical_patterns'],
-                                   lexicon_data['common_drug_prefixes'],
-                                   lexicon_data['common_drug_suffixes'])
+        extract_character_features(t, feats)
         extract_context_features(tokens, k, feats)
-        extract_lexicon_features(tokens, k, feats, lexicon_data)
         extract_pos_features(pos_tags, k, feats)
+        emb_feats = get_embedding_features(t, lexicon_data['word_embeddings'])
+        feats.extend(emb_feats)
+        extract_lexicon_features(tokens, k, feats, lexicon_data)
 
-        # Add drug_n specific features if available
-        if 'drug_n_lexicon' in lexicon_data and 'drug_n_patterns' in lexicon_data:
-            drug_n_feats = extract_drug_n_features(t,
-                                                   lexicon_data['drug_n_lexicon'],
-                                                   lexicon_data['drug_n_patterns'])
-            feats.extend(drug_n_feats)
-
-            # Add context-aware drug_n features
-            if drug_n_feats:
-                # Check for surrounding context that indicates drug_n
-                context_words = []
-                window_size = 3  # Increased from 2 to 3 for better context
-
-                # Get surrounding words
-                for i in range(max(0, k - window_size), min(len(tokens), k + window_size + 1)):
-                    if i != k:
-                        context_words.append(tokens[i][0].lower())
-
-                # Check for contextual clues that indicate drug_n
-                drug_n_context_terms = {
-                    'generic', 'nonproprietary', 'non-proprietary', 'name',
-                    'chemical', 'compound', 'substance', 'active', 'ingredient',
-                    'inn', 'usan', 'molecule', 'agent', 'drug', 'formula',
-                    'acid', 'salt', 'metabolite', 'derivative', 'analog',
-                    'isomer', 'base', 'element', 'receptor'
-                }
-
-                if any(term in ' '.join(context_words).lower() for term in drug_n_context_terms):
-                    feats.append("drugNContext=true")
-
-                # Check if the token appears in a list or enumeration of drugs
-                if k > 0 and k < len(tokens) - 1:
-                    if tokens[k - 1][0] in [',', 'and', 'or'] and any(
-                            f.startswith("drugN") for f in all_feats[k - 1] if k - 1 < len(all_feats)):
-                        feats.append("drugNInList=true")
-
-                # Check for parenthetical context (often indicates drug_n)
-                if k > 0 and tokens[k - 1][0] == '(' and k < len(tokens) - 1 and tokens[k + 1][0] == ')':
-                    feats.append("drugNInParentheses=true")
-
-                # Check for abbreviation pattern (often indicates drug_n)
-                if t.isupper() and 2 <= len(t) <= 5:
-                    feats.append("drugNIsAbbreviation=true")
-
-                # Check for specific patterns that distinguish drug_n from regular drug
-                if any(f.startswith("drugNKnownEntity") for f in drug_n_feats):
-                    # These are known problematic entities, give them a stronger signal
-                    feats.append("drugNStrongSignal=true")
-
-                # Check for patterns that are very likely to be drug_n
-                if (any(f.startswith("drugNHasChemicalPattern") for f in drug_n_feats) or
-                        any(f.startswith("drugNHasRomanNumeral") for f in drug_n_feats) or
-                        any(f.startswith("drugNHasAlphanumericHyphen") for f in drug_n_feats)):
-                    feats.append("drugNVeryLikely=true")
-
-                # Check for capitalization patterns
-                if t[0].isupper() and not all(c.isupper() for c in t):
-                    # Mixed case with first letter capitalized is common for drug_n
-                    feats.append("drugNMixedCase=true")
-        
-        # Add word embedding features if available
-        if 'word_embeddings' in lexicon_data:
-            emb_feats = get_embedding_features(t, lexicon_data['word_embeddings'])
-            feats.extend(emb_feats)
-            
         all_feats.append(feats)
     return all_feats
